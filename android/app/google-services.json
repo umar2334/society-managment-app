@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "743167592395",
+    "project_id": "karim-nagar-b2d6b",
+    "storage_bucket": "karim-nagar-b2d6b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:743167592395:android:c31bc19bff8079b6aa184e",
+        "android_client_info": {
+          "package_name": "com.example.karim_nagar"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBP053TcoIopuIFZisG2oiyoQz7J33Ef3I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
