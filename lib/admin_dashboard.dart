@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'society_data.dart';
@@ -12,6 +13,7 @@ import 'dues_list_screen.dart';
 import 'online_payment_screen.dart';
 import 'login_screen.dart';
 import 'privacy_screen.dart';
+import 'update_service.dart';
 
 class AdminDashboard extends StatefulWidget {
   final String adminId;
@@ -199,6 +201,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   _drawerItem('💳', 'Online Payment', 'EasyPaisa info', const Color(0xFF36B37E), () {
                     Navigator.pop(context);
                     setState(() => _selectedTab = 2);
+                  }),
+                  _drawerItem('📢', 'Update Notification', 'Sab users ko bhjao', const Color(0xFF0052CC), () {
+                    Navigator.pop(context);
+                    _showSendNotificationDialog();
                   }),
                 ],
               ),
@@ -848,6 +854,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildTodayActivity(List<Map<String, dynamic>> today) {
+    final visible = today.take(3).toList();
+    final extra = today.length - visible.length;
     return Container(
       margin: const EdgeInsets.fromLTRB(14, 10, 14, 4),
       decoration: BoxDecoration(
@@ -879,69 +887,96 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ),
           ]),
         ),
-        ...today.map((log) {
-          final house   = (log['house']   ?? '').toString();
-          final action  = (log['action']  ?? '').toString();
-          final detail  = (log['detail']  ?? '').toString();
-          final ts      = log['timestamp'];
-          String timeStr = '';
-          try {
-            final dt = (ts as dynamic).toDate() as DateTime;
-            final h = dt.hour.toString().padLeft(2, '0');
-            final m = dt.minute.toString().padLeft(2, '0');
-            timeStr = '$h:$m';
-          } catch (_) {}
-          Color aColor;
-          IconData aIcon;
-          if (action.contains('Add')) {
-            aColor = const Color(0xFF06D6A0); aIcon = Icons.add_circle_rounded;
-          } else if (action.contains('Delete')) {
-            aColor = const Color(0xFFEF233C); aIcon = Icons.delete_rounded;
-          } else {
-            aColor = const Color(0xFFFFAB00); aIcon = Icons.edit_rounded;
-          }
-          return GestureDetector(
-            onTap: house.isNotEmpty ? () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => HouseDetailScreen(houseId: house))) : null,
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-              decoration: const BoxDecoration(border: Border(
-                  bottom: BorderSide(color: Color(0xFFE4EAF5), width: 1))),
-              child: Row(children: [
-                Container(width: 36, height: 36,
-                  decoration: BoxDecoration(color: aColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(10)),
-                  child: Icon(aIcon, color: aColor, size: 18)),
-                const SizedBox(width: 12),
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [
-                    Text('House # $house', style: GoogleFonts.sora(
-                        fontWeight: FontWeight.w800, fontSize: 13,
-                        color: const Color(0xFF0A1628))),
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(color: aColor.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(6)),
-                      child: Text(action, style: GoogleFonts.sora(
-                          fontSize: 9, fontWeight: FontWeight.w700, color: aColor))),
-                  ]),
-                  if (detail.isNotEmpty)
-                    Text(detail, style: GoogleFonts.sora(
-                        fontSize: 11, color: const Color(0xFF99A8BF)),
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
-                ])),
-                Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  Text(timeStr, style: GoogleFonts.sora(fontSize: 11,
-                      fontWeight: FontWeight.w700, color: const Color(0xFF99A8BF))),
-                  const SizedBox(height: 2),
-                  const Icon(Icons.arrow_forward_ios_rounded,
-                      size: 11, color: Color(0xFF99A8BF)),
-                ]),
-              ]),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 400),
+          transitionBuilder: (child, anim) => FadeTransition(
+            opacity: anim,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                  begin: const Offset(0, -0.15), end: Offset.zero)
+                  .animate(anim),
+              child: child,
             ),
-          );
-        }).toList(),
+          ),
+          child: Column(
+            key: ValueKey(visible.map((e) =>
+                (e['timestamp']?.toString() ?? '')).join('|')),
+            children: [
+              ...visible.map((log) {
+                final house  = (log['house']  ?? '').toString();
+                final action = (log['action'] ?? '').toString();
+                final detail = (log['detail'] ?? '').toString();
+                final ts     = log['timestamp'];
+                String timeStr = '';
+                try {
+                  final dt = (ts as dynamic).toDate() as DateTime;
+                  timeStr = '${dt.hour.toString().padLeft(2,'0')}:${dt.minute.toString().padLeft(2,'0')}';
+                } catch (_) {}
+                Color aColor;
+                IconData aIcon;
+                if (action.contains('Add')) {
+                  aColor = const Color(0xFF06D6A0); aIcon = Icons.add_circle_rounded;
+                } else if (action.contains('Delete')) {
+                  aColor = const Color(0xFFEF233C); aIcon = Icons.delete_rounded;
+                } else {
+                  aColor = const Color(0xFFFFAB00); aIcon = Icons.edit_rounded;
+                }
+                return GestureDetector(
+                  onTap: house.isNotEmpty ? () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => HouseDetailScreen(houseId: house))) : null,
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+                    decoration: const BoxDecoration(border: Border(
+                        bottom: BorderSide(color: Color(0xFFE4EAF5), width: 1))),
+                    child: Row(children: [
+                      Container(width: 36, height: 36,
+                          decoration: BoxDecoration(color: aColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(10)),
+                          child: Icon(aIcon, color: aColor, size: 18)),
+                      const SizedBox(width: 12),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Row(children: [
+                          Text('House # $house', style: GoogleFonts.sora(
+                              fontWeight: FontWeight.w800, fontSize: 13,
+                              color: const Color(0xFF0A1628))),
+                          const SizedBox(width: 6),
+                          Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(color: aColor.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(6)),
+                              child: Text(action, style: GoogleFonts.sora(
+                                  fontSize: 9, fontWeight: FontWeight.w700, color: aColor))),
+                        ]),
+                        if (detail.isNotEmpty)
+                          Text(detail, style: GoogleFonts.sora(
+                              fontSize: 11, color: const Color(0xFF99A8BF)),
+                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ])),
+                      Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                        Text(timeStr, style: GoogleFonts.sora(fontSize: 11,
+                            fontWeight: FontWeight.w700, color: const Color(0xFF99A8BF))),
+                        const SizedBox(height: 2),
+                        const Icon(Icons.arrow_forward_ios_rounded,
+                            size: 11, color: Color(0xFF99A8BF)),
+                      ]),
+                    ]),
+                  ),
+                );
+              }),
+              if (extra > 0)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Center(
+                    child: Text('+$extra more today',
+                        style: GoogleFonts.sora(
+                            fontSize: 11,
+                            color: const Color(0xFF0052CC),
+                            fontWeight: FontWeight.w600)),
+                  ),
+                ),
+            ],
+          ),
+        ),
         const SizedBox(height: 4),
       ]),
     );
@@ -1034,6 +1069,151 @@ class _AdminDashboardState extends State<AdminDashboard> {
           ],
         ),
       ),
+    );
+  }
+
+  // ── SEND UPDATE NOTIFICATION DIALOG ─────────────────────
+  void _showSendNotificationDialog() async {
+    // Firebase se current version info lo
+    String version = '';
+    String releaseNotes = '';
+    try {
+      final snap = await FirebaseDatabase.instance.ref('app_version').get();
+      if (snap.exists) {
+        final d = Map<String, dynamic>.from(snap.value as Map);
+        version      = d['version']?.toString()       ?? '';
+        releaseNotes = d['release_notes']?.toString() ?? '';
+      }
+    } catch (_) {}
+
+    final savedKey = await UpdateService.getSavedServerKey();
+    final keyCtrl  = TextEditingController(text: savedKey);
+    bool sending   = false;
+    String? result;
+
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setS) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Column(children: [
+            Container(
+              width: 52, height: 52,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0052CC).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(Icons.campaign_rounded,
+                  color: Color(0xFF0052CC), size: 26),
+            ),
+            const SizedBox(height: 10),
+            Text('Send Update Notification',
+                style: GoogleFonts.sora(
+                    fontWeight: FontWeight.w800, fontSize: 16)),
+            const SizedBox(height: 4),
+            Text('Sab users ko notification jayegi',
+                style: GoogleFonts.sora(
+                    fontSize: 11, color: Colors.grey)),
+          ]),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            if (version.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF36B37E).withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(children: [
+                  const Icon(Icons.info_outline_rounded,
+                      size: 14, color: Color(0xFF36B37E)),
+                  const SizedBox(width: 6),
+                  Text('Version: v$version',
+                      style: GoogleFonts.sora(
+                          fontSize: 11, color: const Color(0xFF36B37E),
+                          fontWeight: FontWeight.w600)),
+                ]),
+              ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: keyCtrl,
+              obscureText: true,
+              decoration: InputDecoration(
+                labelText: 'FCM Server Key',
+                hintText: 'AAAA....:APA91b...',
+                helperText:
+                    'Firebase Console → Project Settings → Cloud Messaging',
+                helperMaxLines: 2,
+                prefixIcon: const Icon(Icons.key_rounded),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+              style: GoogleFonts.sora(fontSize: 12),
+            ),
+            if (result != null) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: result!.startsWith('✅')
+                      ? const Color(0xFF36B37E).withOpacity(0.08)
+                      : Colors.red.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(result!,
+                    style: GoogleFonts.sora(
+                        fontSize: 12,
+                        color: result!.startsWith('✅')
+                            ? const Color(0xFF36B37E)
+                            : Colors.red)),
+              ),
+            ],
+          ]),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text('Cancel',
+                    style: GoogleFonts.sora(color: Colors.grey))),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0052CC)),
+              onPressed: sending
+                  ? null
+                  : () async {
+                      final key = keyCtrl.text.trim();
+                      if (key.isEmpty) {
+                        setS(() => result = '❌ Server Key daalo pehle');
+                        return;
+                      }
+                      setS(() { sending = true; result = null; });
+                      await UpdateService.saveServerKey(key);
+                      final ok =
+                          await UpdateService.sendUpdatePushNotification(
+                        serverKey: key,
+                        version: version,
+                        releaseNotes: releaseNotes,
+                      );
+                      setS(() {
+                        sending = false;
+                        result  = ok
+                            ? '✅ Notification bhjaj di gayi!'
+                            : '❌ Failed — Server Key check karo';
+                      });
+                    },
+              icon: sending
+                  ? const SizedBox(
+                      width: 16, height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.send_rounded, size: 18),
+              label: Text(sending ? 'Sending...' : 'Send',
+                  style: GoogleFonts.sora(
+                      color: Colors.white, fontWeight: FontWeight.w700)),
+            ),
+          ],
+        );
+      }),
     );
   }
 

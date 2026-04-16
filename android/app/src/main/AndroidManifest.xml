@@ -13,6 +13,9 @@
     <!-- Internet -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
+    <!-- APK install karne ke liye -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+
     <!-- Storage — Android 13+ ke liye READ_MEDIA_IMAGES zaroor chahiye -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     <!-- Android 12 aur neeche ke liye -->
@@ -22,7 +25,7 @@
         android:maxSdkVersion="28"/>
 
     <application
-        android:label="KARIMNAGARPORTAL"
+        android:label="KN Portal"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon"
         android:requestLegacyExternalStorage="true">
@@ -60,6 +63,14 @@
         <receiver
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
             android:exported="false"/>
+
+        <!-- FCM default notification channel -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="update_channel"/>
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@mipmap/launcher_icon"/>
 
         <meta-data
             android:name="flutterEmbedding"

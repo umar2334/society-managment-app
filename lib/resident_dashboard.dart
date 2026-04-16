@@ -1,10 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -74,6 +72,7 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
         final list = periodMap.values.toList();
         list.sort((a, b) => (b['date'] as String).compareTo(a['date'] as String));
         setState(() => _paymentsList = list);
+        _checkAndNotify();
       }
     });
   }
@@ -84,7 +83,25 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
   }
 
   void _scheduleNotification() async {
-    
+    await NotificationService.init();
+    await NotificationService.requestPermissions();
+  }
+
+  void _checkAndNotify() {
+    if (_loading) return;
+    final dues = _getPendingDues();
+    if (dues.isEmpty) {
+      NotificationService.cancelAllForHouse(widget.houseId);
+      return;
+    }
+    final dueMonths = dues
+        .map((d) => '${d['monthName']} ${d['year']}')
+        .toList();
+    NotificationService.handleDuesNotification(
+      houseId: widget.houseId,
+      allDues: dueMonths,
+      totalDues: _duesAmount,
+    );
   }
 
   void _listenData() {
@@ -98,6 +115,7 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
           _userData = snap.docs.first.data();
           _loading = false;
         });
+        _checkAndNotify();
       } else if (mounted) {
         setState(() => _loading = false);
       }
@@ -151,7 +169,7 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
     const monthNames = ['January','February','March','April','May','June',
         'July','August','September','October','November','December'];
     final dues = <Map<String, dynamic>>[];
-    for (int y = 2025; y <= now.year; y++) {
+    for (int y = 2026; y <= now.year; y++) {
       final maxM = y == now.year ? now.month : 12;
       for (int m = 1; m <= maxM; m++) {
         if (!paidSet.contains('${monthNames[m-1]}-$y')) {
@@ -161,8 +179,6 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
     }
     return dues;
   }
-
-  int get _paidMonths => _paidMonthYearSet.length;
 
   // ── Recent payments ──
   List<Map<String, dynamic>> _getRecentPayments() {
@@ -184,14 +200,6 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
   }
 
   double get _duesAmount => _getPendingDues().length * 700.0;
-
-  bool get _currentMonthPaid {
-    final now = DateTime.now();
-    const monthNames = ['January','February','March','April','May','June',
-        'July','August','September','October','November','December'];
-    final key = '${monthNames[now.month-1]}-${now.year}';
-    return _paidMonthYearSet.contains(key);
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -461,47 +469,150 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
   Widget _buildCards() {
     final dues = _getPendingDues();
     final hasDues = dues.isNotEmpty;
-    final now = DateTime.now();
-    final isWarningPeriod = now.day >= 1 && now.day <= 10 && !_currentMonthPaid;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
-      child: GridView.count(
-        crossAxisCount: 2,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-        childAspectRatio: 1.35,
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
+      child: Column(
         children: [
-          // Card 1: Last Payment
-          _resCard(
-            icon: '💳',
-            iconBg: const Color(0xFF36B37E).withOpacity(0.12),
-            value: _lastPaymentLabel(),
-            valueColor: const Color(0xFF36B37E),
-            label: 'Last Payment',
+          Row(
+            children: [
+              Expanded(
+                child: _resCard(
+                  icon: '💳',
+                  iconBg: const Color(0xFF36B37E).withOpacity(0.12),
+                  value: _lastPaymentLabel(),
+                  valueColor: const Color(0xFF36B37E),
+                  label: 'Last Payment',
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _resCard(
+                  icon: '📅',
+                  iconBg: const Color(0xFF0052CC).withOpacity(0.1),
+                  value: 'Rs.700',
+                  valueColor: const Color(0xFF0052CC),
+                  label: 'Monthly Fee',
+                ),
+              ),
+            ],
           ),
-          // Card 2: Monthly Fee
-          _resCard(
-            icon: '📅',
-            iconBg: const Color(0xFF0052CC).withOpacity(0.1),
-            value: 'Rs.700',
-            valueColor: const Color(0xFF0052CC),
-            label: 'Monthly Fee',
+          const SizedBox(height: 12),
+          _buildDuesCard(dues, hasDues),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDuesCard(List<Map<String, dynamic>> dues, bool hasDues) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: hasDues
+            ? const Color(0xFFFF5630).withOpacity(0.04)
+            : Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: hasDues
+              ? const Color(0xFFFF5630).withOpacity(0.25)
+              : const Color(0xFFEBECF0),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0052CC).withOpacity(0.06),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
-          // Card 3: Timer ring
-          _timerCard(isWarningPeriod, hasDues, now.day),
-          // Card 4: Dues
-          _resCard(
-            icon: hasDues ? '⚠️' : '✅',
-            iconBg: hasDues
-                ? const Color(0xFFFF5630).withOpacity(0.1)
-                : const Color(0xFF36B37E).withOpacity(0.1),
-            value: hasDues ? 'Rs.${_duesAmount.toInt()}' : 'Clear!',
-            valueColor: hasDues ? const Color(0xFFFF5630) : const Color(0xFF36B37E),
-            label: hasDues ? 'Dues Amount' : 'No Dues',
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: hasDues
+                      ? const Color(0xFFFF5630).withOpacity(0.1)
+                      : const Color(0xFF36B37E).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Center(
+                    child: Text(hasDues ? '⚠️' : '✅',
+                        style: const TextStyle(fontSize: 18))),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      hasDues ? 'Dues Pending' : 'No Dues',
+                      style: GoogleFonts.sora(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: hasDues
+                              ? const Color(0xFFFF5630)
+                              : const Color(0xFF36B37E)),
+                    ),
+                    Text(
+                      hasDues
+                          ? '${dues.length} month(s) unpaid'
+                          : 'All clear!',
+                      style: GoogleFonts.sora(
+                          fontSize: 10, color: const Color(0xFF8993A4)),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                hasDues ? 'Rs.${_duesAmount.toInt()}' : 'Rs.0',
+                style: GoogleFonts.sora(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: hasDues
+                      ? const Color(0xFFFF5630)
+                      : const Color(0xFF36B37E),
+                ),
+              ),
+            ],
           ),
+          if (hasDues) ...[
+            const SizedBox(height: 10),
+            const Divider(height: 1, color: Color(0xFFEBECF0)),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: dues.map((d) {
+                final mn =
+                    (d['monthName'] as String).substring(0, 3);
+                final y = d['year'].toString().substring(2);
+                return Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color:
+                        const Color(0xFFFF5630).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: const Color(0xFFFF5630)
+                            .withOpacity(0.25)),
+                  ),
+                  child: Text(
+                    "$mn'$y",
+                    style: GoogleFonts.sora(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFFFF5630)),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
         ],
       ),
     );
@@ -515,6 +626,7 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
     required String label,
   }) {
     return Container(
+      height: 100,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -530,6 +642,7 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Container(
             width: 38,
@@ -537,65 +650,18 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
             decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(11)),
             child: Center(child: Text(icon, style: const TextStyle(fontSize: 18))),
           ),
-          const Spacer(),
-          Text(
-            value,
-            style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w800, color: valueColor),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: GoogleFonts.sora(fontSize: 10, color: const Color(0xFF8993A4)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _timerCard(bool isWarningPeriod, bool hasDues, int day) {
-    // Show red if ANY dues pending (not just 1-10 tarikh)
-    final showRed = hasDues;
-    final showWarning = hasDues && day <= 10; // 1-10 tarikh warning
-    final labelText = showWarning ? 'Pay Before 10th'
-        : hasDues ? 'Dues Pending'
-        : 'On Time';
-    final labelColor = showRed
-        ? const Color(0xFFFF5630)
-        : const Color(0xFF36B37E);
-
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: showRed
-            ? const Color(0xFFFF5630).withOpacity(0.05)
-            : Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: showRed
-              ? const Color(0xFFFF5630).withOpacity(0.25)
-              : const Color(0xFFEBECF0),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF0052CC).withOpacity(0.06),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          _TimerRing(day: day, hasDues: showRed),
-          const SizedBox(height: 4),
-          Text(
-            labelText,
-            style: GoogleFonts.sora(
-              fontSize: 9,
-              fontWeight: FontWeight.w600,
-              color: labelColor,
-            ),
-            textAlign: TextAlign.center,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                value,
+                style: GoogleFonts.sora(fontSize: 15, fontWeight: FontWeight.w800, color: valueColor),
+              ),
+              Text(
+                label,
+                style: GoogleFonts.sora(fontSize: 10, color: const Color(0xFF8993A4)),
+              ),
+            ],
           ),
         ],
       ),
@@ -650,10 +716,10 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
             final period = p['period']?.toString() ?? '';
             final dateStr = p['date']?.toString() ?? '';
             final amt = (p['amount'] as num?)?.toDouble() ?? 700.0;
+            final imgUrl = p['img']?.toString() ?? '';
 
             return Container(
               margin: const EdgeInsets.fromLTRB(14, 0, 14, 10),
-              padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(16),
@@ -661,29 +727,104 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                 boxShadow: [BoxShadow(color: const Color(0xFF36B37E).withOpacity(0.06),
                     blurRadius: 8, offset: const Offset(0, 2))],
               ),
-              child: Row(
+              child: Column(
                 children: [
-                  Container(
-                    width: 42, height: 42,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF36B37E).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
+                  Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 42, height: 42,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF36B37E).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Center(child: Text('✅', style: TextStyle(fontSize: 20))),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text(period.isNotEmpty ? period : 'Payment',
+                              style: GoogleFonts.sora(fontWeight: FontWeight.w700, fontSize: 13),
+                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                            Text('Paid: $dateStr',
+                              style: GoogleFonts.sora(fontSize: 11, color: const Color(0xFF8993A4))),
+                          ]),
+                        ),
+                        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                          Text('Rs.${amt.toStringAsFixed(0)}',
+                            style: GoogleFonts.sora(fontWeight: FontWeight.w800,
+                                color: const Color(0xFF36B37E), fontSize: 14)),
+                          if (imgUrl.isNotEmpty)
+                            Text('📎 Voucher', style: GoogleFonts.sora(
+                                fontSize: 9, color: const Color(0xFF0052CC),
+                                fontWeight: FontWeight.w600)),
+                        ]),
+                      ],
                     ),
-                    child: const Center(child: Text('✅', style: TextStyle(fontSize: 20))),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(period.isNotEmpty ? period : 'Payment',
-                        style: GoogleFonts.sora(fontWeight: FontWeight.w700, fontSize: 13),
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
-                      Text('Paid: $dateStr',
-                        style: GoogleFonts.sora(fontSize: 11, color: const Color(0xFF8993A4))),
-                    ]),
-                  ),
-                  Text('Rs.${amt.toStringAsFixed(0)}',
-                    style: GoogleFonts.sora(fontWeight: FontWeight.w800,
-                        color: const Color(0xFF36B37E), fontSize: 14)),
+                  if (imgUrl.isNotEmpty)
+                    GestureDetector(
+                      onTap: () => showDialog(
+                        context: context,
+                        barrierColor: Colors.black87,
+                        builder: (_) => GestureDetector(
+                          onTap: () => Navigator.pop(context),
+                          child: Dialog(
+                            backgroundColor: Colors.transparent,
+                            elevation: 0,
+                            child: Column(mainAxisSize: MainAxisSize.min, children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(16),
+                                child: Image.network(imgUrl,
+                                    fit: BoxFit.contain, width: 320),
+                              ),
+                              const SizedBox(height: 10),
+                              Text('Tap to close', style: GoogleFonts.sora(
+                                  color: Colors.white54, fontSize: 11)),
+                            ]),
+                          ),
+                        ),
+                      ),
+                      child: Container(
+                        margin: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                        height: 140, width: double.infinity,
+                        decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFEBECF0))),
+                        child: Stack(children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(11),
+                            child: Image.network(imgUrl,
+                                width: double.infinity, height: double.infinity,
+                                fit: BoxFit.cover,
+                                loadingBuilder: (_, child, prog) =>
+                                    prog == null ? child : const Center(
+                                        child: CircularProgressIndicator(strokeWidth: 2)),
+                                errorBuilder: (_, __, ___) => const Center(
+                                    child: Icon(Icons.broken_image_rounded, color: Colors.grey))),
+                          ),
+                          Positioned(top: 8, left: 8,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                  color: const Color(0xFF0052CC).withOpacity(0.85),
+                                  borderRadius: BorderRadius.circular(8)),
+                              child: Text('Payment Voucher', style: GoogleFonts.sora(
+                                  color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700)),
+                            )),
+                          Positioned(bottom: 8, right: 8,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.6),
+                                  borderRadius: BorderRadius.circular(8)),
+                              child: Text('Tap to enlarge', style: GoogleFonts.sora(
+                                  color: Colors.white, fontSize: 9)),
+                            )),
+                        ]),
+                      ),
+                    ),
                 ],
               ),
             );
@@ -1149,139 +1290,4 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
       }),
     );
   }
-}
-
-// ── TIMER RING WIDGET ────────────────────────────────────
-class _TimerRing extends StatefulWidget {
-  final int day;
-  final bool hasDues;
-  const _TimerRing({required this.day, required this.hasDues});
-
-  @override
-  State<_TimerRing> createState() => _TimerRingState();
-}
-
-class _TimerRingState extends State<_TimerRing> with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-  late Animation<double> _glow;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500))
-      ..repeat(reverse: true);
-    _glow = Tween<double>(begin: 0.3, end: 1.0).animate(
-      CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _glow,
-      builder: (_, __) {
-        return SizedBox(
-          width: 62,
-          height: 62,
-          child: CustomPaint(
-            painter: _TimerRingPainter(
-              day: widget.day,
-              hasDues: widget.hasDues,
-              glowOpacity: widget.hasDues ? _glow.value : 0,
-            ),
-            child: Center(
-              child: widget.hasDues
-                  ? Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          '${widget.day}',
-                          style: GoogleFonts.sora(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                            color: const Color(0xFFFF5630),
-                            height: 1,
-                          ),
-                        ),
-                        Text(
-                          '/10',
-                          style: GoogleFonts.sora(
-                            fontSize: 8,
-                            fontWeight: FontWeight.w700,
-                            color: const Color(0xFFFF5630).withOpacity(0.6),
-                            height: 1,
-                          ),
-                        ),
-                      ],
-                    )
-                  : const Text('✓', style: TextStyle(fontSize: 22, color: Color(0xFF36B37E))),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _TimerRingPainter extends CustomPainter {
-  final int day;
-  final bool hasDues;
-  final double glowOpacity;
-  const _TimerRingPainter({required this.day, required this.hasDues, required this.glowOpacity});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cx = size.width / 2;
-    final cy = size.height / 2;
-    final r = (size.width - 10) / 2;
-    const sw = 6.0;
-    final color = hasDues ? const Color(0xFFFF5630) : const Color(0xFF36B37E);
-    final progress = hasDues ? day / 10.0 : 1.0;
-
-    if (hasDues && glowOpacity > 0) {
-      final grad = RadialGradient(
-        colors: [
-          const Color(0xFFFF5630).withOpacity(glowOpacity * 0.3),
-          Colors.transparent,
-        ],
-      );
-      canvas.drawCircle(
-        Offset(cx, cy),
-        r + 8,
-        Paint()..shader = grad.createShader(Rect.fromCircle(center: Offset(cx, cy), radius: r + 8)),
-      );
-    }
-
-    canvas.drawCircle(
-      Offset(cx, cy),
-      r,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = sw
-        ..color = color.withOpacity(0.15),
-    );
-
-    if (progress > 0) {
-      canvas.drawArc(
-        Rect.fromCircle(center: Offset(cx, cy), radius: r),
-        -math.pi / 2,
-        2 * math.pi * progress,
-        false,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = sw
-          ..strokeCap = StrokeCap.round
-          ..color = color,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_TimerRingPainter old) => old.glowOpacity != glowOpacity;
 }

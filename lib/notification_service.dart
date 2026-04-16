@@ -1,8 +1,8 @@
-// lib/screens/notification_service.dart
+// lib/notification_service.dart
 import 'dart:ui' show Color;
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
 
 class NotificationService {
@@ -21,6 +21,56 @@ class NotificationService {
     await _plugin.initialize(
         const InitializationSettings(android: android, iOS: ios));
     _initialized = true;
+  }
+
+  // ── FCM Setup ─────────────────────────────────────────────────
+  // Sab users ko society_updates topic subscribe karo
+  // Yeh tab call karo jab app start ho
+  static Future<void> setupFCM() async {
+    final fcm = FirebaseMessaging.instance;
+
+    // iOS/Android permissions
+    await fcm.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
+    // Sab users society_updates topic subscribe karo
+    await fcm.subscribeToTopic('society_updates');
+
+    // Foreground notification channel (Android 8+)
+    const channel = AndroidNotificationChannel(
+      'update_channel',
+      'App Updates',
+      description: 'Naye update ki notifications',
+      importance: Importance.max,
+    );
+    await _plugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(channel);
+
+    // Foreground: FCM message aaye tou local notification dikhao
+    FirebaseMessaging.onMessage.listen((RemoteMessage msg) {
+      final n = msg.notification;
+      if (n == null) return;
+      _plugin.show(
+        9999,
+        n.title ?? 'Update Available',
+        n.body ?? '',
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'update_channel',
+            'App Updates',
+            channelDescription: 'Naye update ki notifications',
+            importance: Importance.max,
+            priority: Priority.max,
+            color: Color(0xFF0052CC),
+          ),
+        ),
+      );
+    });
   }
 
   // Permission sirf ek baar poochna
@@ -85,9 +135,8 @@ class NotificationService {
     if (await _alreadySentToday(houseId)) return;
 
     // Notification bhejo
-    final title = 'Dues Reminder — House $houseId';
-    final body =
-        '${allDues.length} month(s) pending — Rs. ${totalDues.toStringAsFixed(0)}\nPlease pay before 10th.';
+    final title = 'مینٹیننس یاددہانی — گھر نمبر $houseId';
+    const body = 'برائے مہربانی مینٹیننس ویزٹ کریں۔ شکریہ';
 
     const ad = AndroidNotificationDetails(
       'dues_channel',
