@@ -1,9 +1,9 @@
 {
   "app_version": {
-    "version_code": 28,
-    "version": "1.0.28",
-    "apk_url": "https://drive.google.com/uc?export=download&id=1EPsg9h5LMXcN2dTIdx10fcRqdvQcX_jF",
-    "release_notes": "- App launch screen fix\n- App name: KN Portal\n- Dues Jan 2026 se\n- Voucher image show hogi\n- Update notification system",
+    "version_code": 29,
+    "version": "1.0.29",
+    "apk_url": "https://drive.google.com/uc?export=download&id=11SrMHTnAmaygYl5LP7And83H-6Mfi6Cm",
+    "release_notes": "- White screen fix\n- Black launch screen fix\n- App name: KN Portal\n- Dues Jan 2026 se\n- Voucher image show hogi\n- Update notification system",
     "force_update": false
   }
 }
